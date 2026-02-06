@@ -1,0 +1,6 @@
+---
+- name: Base setup
+  hosts: vps
+  tasks:
+    - name: Ping hosts
+      ping:

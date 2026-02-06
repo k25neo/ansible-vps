@@ -1,0 +1,12 @@
+services:
+  ansible:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    entrypoint: []
+    command: ["sh"]
+    stdin_open: true
+    tty: true
