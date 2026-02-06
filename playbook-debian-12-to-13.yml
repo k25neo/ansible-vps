@@ -1,0 +1,36 @@
+---
+- name: Upgrade Debian 12 to 13 (Trixie)
+  hosts: vps
+  when: ansible_distribution_major_version | int == 12
+  tasks:
+    - name: Replace bookworm with trixie in sources.list
+      ansible.builtin.replace:
+        path: /etc/apt/sources.list
+        regexp: 'bookworm'
+        replace: 'trixie'
+
+    - name: Replace bookworm in debian.sources (Debian 12+ format)
+      ansible.builtin.replace:
+        path: /etc/apt/sources.list.d/debian.sources
+        regexp: 'bookworm'
+        replace: 'trixie'
+      when: ansible_os_family == 'Debian'
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 0
+
+    - name: Full upgrade (dist-upgrade)
+      ansible.builtin.apt:
+        upgrade: full
+        autoremove: true
+        autoclean: true
+
+    - name: Reboot and wait
+      ansible.builtin.reboot:
+        msg: "Reboot after Debian upgrade"
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
