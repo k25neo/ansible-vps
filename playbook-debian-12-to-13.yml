@@ -1,31 +1,41 @@
 ---
 - name: Upgrade Debian 12 to 13 (Trixie)
   hosts: vps
-  when: ansible_distribution_major_version | int == 12
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
   tasks:
     - name: Replace bookworm with trixie in sources.list
       ansible.builtin.replace:
         path: /etc/apt/sources.list
         regexp: 'bookworm'
         replace: 'trixie'
+      when: ansible_facts["distribution_major_version"] | int == 12
+
+    - name: Check if debian.sources exists
+      ansible.builtin.stat:
+        path: /etc/apt/sources.list.d/debian.sources
+      register: debian_sources_file
+      when: ansible_facts["distribution_major_version"] | int == 12
 
     - name: Replace bookworm in debian.sources (Debian 12+ format)
       ansible.builtin.replace:
         path: /etc/apt/sources.list.d/debian.sources
         regexp: 'bookworm'
         replace: 'trixie'
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts["distribution_major_version"] | int == 12 and (debian_sources_file is defined and debian_sources_file.stat.exists)
 
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 0
+      when: ansible_facts["distribution_major_version"] | int == 12
 
     - name: Full upgrade (dist-upgrade)
       ansible.builtin.apt:
         upgrade: full
         autoremove: true
         autoclean: true
+      when: ansible_facts["distribution_major_version"] | int == 12
 
     - name: Reboot and wait
       ansible.builtin.reboot:
@@ -34,3 +44,4 @@
         reboot_timeout: 300
         pre_reboot_delay: 0
         post_reboot_delay: 30
+      when: ansible_facts["distribution_major_version"] | int == 12
