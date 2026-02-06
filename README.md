@@ -1,5 +1,6 @@
 # ansible-vps
 
+Запуск контейнера с терминалом:
 docker compose run --rm ansible
 
 ## Запуск апгрейда:
