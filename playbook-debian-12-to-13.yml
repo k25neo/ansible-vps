@@ -45,3 +45,10 @@
         pre_reboot_delay: 0
         post_reboot_delay: 30
       when: ansible_facts["distribution_major_version"] | int == 12
+
+    - name: Verify new Debian version
+      ansible.builtin.setup:
+      
+    - name: Display current Debian version
+      ansible.builtin.debug:
+        msg: "Система успешно обновлена до версии {{ ansible_facts['distribution_major_version'] }} ({{ ansible_facts['distribution_release'] }})"
