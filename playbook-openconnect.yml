@@ -1,0 +1,94 @@
+---
+- name: Install and configure ocserv (OpenConnect server)
+  hosts: vps
+  vars:
+    ocserv_listen_port: 443
+    ocserv_ipv4_network: "10.10.10.0"
+    ocserv_ipv4_netmask: "255.255.255.0"
+    ocserv_dns: "8.8.8.8"
+    ocserv_default_domain: "{{ ansible_ens18.ipv4.address }}"
+    ocserv_ssl_dir: "/etc/ocserv/ssl"
+    ocserv_cert_cn: "{{ ansible_ens18.ipv4.address | default(inventory_hostname) }}"
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 0
+
+    - name: Install ocserv
+      ansible.builtin.apt:
+        name: ocserv
+        state: present
+
+    - name: Create directory for TLS certificates
+      ansible.builtin.file:
+        path: "{{ ocserv_ssl_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Generate self-signed certificate and key
+      ansible.builtin.shell: |
+        openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+          -keyout {{ ocserv_ssl_dir }}/server-key.pem \
+          -out {{ ocserv_ssl_dir }}/server-cert.pem \
+          -subj "/CN={{ ocserv_cert_cn }}"
+        chmod 600 {{ ocserv_ssl_dir }}/server-key.pem
+        chmod 644 {{ ocserv_ssl_dir }}/server-cert.pem
+      args:
+        creates: "{{ ocserv_ssl_dir }}/server-cert.pem"
+      when: not ocserv_use_existing_cert | default(false) | bool
+      notify: restart ocserv
+
+    - name: Backup and clean ocserv config
+      ansible.builtin.copy:
+        src: /etc/ocserv/ocserv.conf
+        dest: /etc/ocserv/ocserv.conf.bak
+        remote_src: true
+        force: no
+
+    - name: Remove emty comments from ocserv config
+      ansible.builtin.replace:
+        path: /etc/ocserv/ocserv.conf
+        regexp: '^\s*#.*$|^\s*$'
+        replace: ''
+
+    - name: Setup ports and serts and other params
+      ansible.builtin.lineinfile:
+        path: /etc/ocserv/ocserv.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+      loop:
+        # Auth
+        - { regexp: '^auth =', line: 'auth = "plain[passwd=/etc/ocserv/ocpasswd]"' }
+        # Настройка портов
+        - { regexp: '^tcp-port =', line: 'tcp-port = {{ ocserv_listen_port }}' }
+        - { regexp: '^udp-port =', line: 'udp-port = {{ ocserv_listen_port }}' }
+        # Пути к сертификатам
+        - { regexp: '^server-cert =', line: 'server-cert = {{ ocserv_ssl_dir }}/server-cert.pem' }
+        - { regexp: '^server-key =', line: 'server-key = {{ ocserv_ssl_dir }}/server-key.pem' }
+        # Настройка сети
+        - { regexp: '^ipv4-network =', line: 'ipv4-network = {{ ocserv_ipv4_network }}' }
+        - { regexp: '^ipv4-netmask =', line: 'ipv4-netmask = {{ ocserv_ipv4_netmask }}' }
+        - { regexp: '^dns =', line: 'dns = {{ ocserv_dns }}' }
+        - { regexp: '^default-domain =', line: 'default-domain = {{ ocserv_default_domain }}' }
+      notify: Restart ocserv
+
+    - name: Ensure ocpasswd file exists
+      ansible.builtin.file:
+        path: /etc/ocserv/ocpasswd
+        state: touch
+        mode: "0600"
+
+    - name: Enable and start ocserv
+      ansible.builtin.systemd:
+        name: ocserv
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: restart ocserv
+      ansible.builtin.systemd:
+        name: ocserv
+        state: restarted
