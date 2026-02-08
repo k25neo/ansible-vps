@@ -136,17 +136,19 @@
         state: present
       notify: restart ocserv
 
-    - name: Count dns lines in ocserv config
-      ansible.builtin.shell: grep -c '^dns =' /etc/ocserv/ocserv.conf || true
-      register: ocserv_dns_count
-      changed_when: false
+    - name: Remove all dns lines except dns = {{ ocserv_dns }}
+      ansible.builtin.lineinfile:
+        path: /etc/ocserv/ocserv.conf
+        regexp: '^dns = (?!{{ ocserv_dns }}).*'
+        state: absent
+      notify: restart ocserv
 
-    - name: Remove duplicate dns lines (keep only first)
-      ansible.builtin.shell: |
-        awk '/^dns =/ { if (++n==1) print; next } 1' /etc/ocserv/ocserv.conf > /tmp/ocserv.conf.$$ && mv /tmp/ocserv.conf.$$ /etc/ocserv/ocserv.conf
-      args:
-        executable: /bin/bash
-      when: ocserv_dns_count.stdout | default('0') | int > 1
+    - name: Set dns = {{ ocserv_dns }}
+      ansible.builtin.lineinfile:
+        path: /etc/ocserv/ocserv.conf
+        regexp: '^dns = {{ ocserv_dns }}'
+        line: 'dns = {{ ocserv_dns }}'
+        state: present
       notify: restart ocserv
 
     - name: Ensure ocpasswd file exists
