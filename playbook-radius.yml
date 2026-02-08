@@ -1,0 +1,196 @@
+---
+- name: Install and configure radius server
+  hosts: radius
+  vars:
+    radius_db_name: "radius"
+    radius_db_user: "radius"
+    radius_schema_path: "/etc/freeradius/3.0/mods-config/sql/main/mysql/schema.sql"
+  tasks:
+    - name: Install RADIUS
+      ansible.builtin.apt:
+        name: 
+          - freeradius
+          - freeradius-utils
+          - libradcli4
+          - libradcli-dev
+          - freeradius-mysql
+          - mariadb-server
+        state: present
+      tags: install_radius
+
+    - name: install MariaDb server
+      ansible.builtin.apt:
+        name: mariadb-server
+        state: present
+        update_cache: true
+
+    - name: Ensure MariaDb is running
+      ansible.builtin.systemd:
+        name: mariadb
+        state: started
+        enabled: true
+
+    - name: Create radius database
+      ansible.builtin.shell: mysql -e "CREATE DATABASE IF NOT EXISTS {{ radius_db_name }};"
+      changed_when: true
+
+    - name: Create radius MySQL user and grant
+      ansible.builtin.shell: |
+        mysql -e "CREATE USER IF NOT EXISTS '{{ radius_db_user }}'@'localhost' IDENTIFIED BY '{{ radius_db_password }}';"
+        mysql -e "GRANT ALL PRIVILEGES ON {{ radius_db_name }}.* TO '{{ radius_db_user }}'@'localhost';"
+        mysql -e "FLUSH PRIVILEGES;"
+      no_log: true
+
+    - name: Check if radius schema already loaded
+      ansible.builtin.shell: mysql -e "SELECT 1 FROM {{ radius_db_name }}.radcheck LIMIT 1" 2>/dev/null
+      register: radius_schema_loaded
+      failed_when: false
+      changed_when: false
+
+    - name: Load FreeRADIUS MySQL schema
+      ansible.builtin.shell: mysql {{ radius_db_name }} < {{ radius_schema_path }}
+      when: radius_schema_loaded.rc != 0
+
+    - name: Generate secret
+      ansible.builtin.shell: "dd if=/dev/random bs=1 count=24 | base64"
+      register: radius_secret
+
+    - name: Set all radius secret
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/clients.conf
+        regexp: '^\s*secret\s*=\s*\S+'
+        replace: 'secret = {{ radius_secret.stdout }}'
+      notify: restart freeradius
+
+    - name: Enable SQL module for FreeRADIUS
+      ansible.builtin.file:
+        src: /etc/freeradius/3.0/mods-available/sql
+        dest: /etc/freeradius/3.0/mods-enabled/sql
+        state: link
+      notify: restart freeradius
+
+    - name: Set SQL module driver and dialect
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^(\s*driver\s*=\s*).*'
+        replace: '\1"rlm_sql_mysql"'
+      notify: restart freeradius
+
+    - name: Set SQL dialect to mysql
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^(\s*dialect\s*=\s*).*'
+        replace: '\1"mysql"'
+      notify: restart freeradius
+
+    - name: Uncomment and set SQL server
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^#(\s*server\s*=)\s*.*'
+        replace: '\1 "localhost"'
+      notify: restart freeradius
+
+    - name: Uncomment and set SQL port
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^#(\s*port\s*=)\s*.*'
+        replace: '\1 3306'
+      notify: restart freeradius
+    
+    - name: Uncomment and set SQL login
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^#(\s*login\s*=)\s*.*'
+        replace: '\1 "{{ radius_db_user }}"'
+      notify: restart freeradius
+
+    - name: Uncomment and set SQL password
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^#(\s*password\s*=)\s*.*'
+        replace: '\1 "{{ radius_db_password }}"'
+      notify: restart freeradius
+      no_log: true
+
+    - name: Set SQL radius_db
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^(\s*radius_db\s*=\s*).*'
+        replace: '\1"{{ radius_db_name }}"'
+      notify: restart freeradius
+
+    - name: Disable TLS in SQL module (comment out ca_file to avoid missing file)
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^(\s*)(ca_file\s*=.*)'
+        replace: '\1# \2'
+      notify: restart freeradius
+
+    - name: Comment out TLS certificate_file in SQL module
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^(\s*)(certificate_file\s*=.*)'
+        replace: '\1# \2'
+      notify: restart freeradius
+
+    - name: Comment out TLS private_key_file in SQL module
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^(\s*)(private_key_file\s*=.*)'
+        replace: '\1# \2'
+      notify: restart freeradius
+
+    - name: Comment out TLS ca_path in SQL module
+      ansible.builtin.replace:
+        path: /etc/freeradius/3.0/mods-available/sql
+        regexp: '^(\s*)(ca_path\s*=.*)'
+        replace: '\1# \2'
+      notify: restart freeradius
+
+    - name: Add sql to authorize section
+      ansible.builtin.lineinfile:
+        path: /etc/freeradius/3.0/sites-available/default
+        insertafter: '^\s*authorize\s*\{'
+        line: '            sql'
+        state: present
+      notify: restart freeradius
+
+    - name: Set RADIUS shared secret (matching FreeRADIUS clients.conf)
+      ansible.builtin.copy:
+        dest: /etc/radcli/servers
+        content: "127.0.0.1  {{ radius_secret.stdout }}"
+        mode: '0600'
+
+    - name: Configure ocserv to use RADIUS
+      ansible.builtin.replace:
+        path: /etc/ocserv/ocserv.conf
+        regexp: "{{ item.regexp }}"
+        replace: "{{ item.replace }}"
+      loop:
+        - { regexp: '^auth = .*', replace: 'auth = "radius[config=/etc/radcli/radiusclient.conf,groupconfig=true]"' }
+        - { regexp: '^acct = .*', replace: 'acct = "radius[config=/etc/radcli/radiusclient.conf]"' }
+
+    - name: Enable and start FreeRADIUS
+      ansible.builtin.systemd:
+        name: freeradius
+        enabled: true
+        state: started
+
+    - name: Restart ocserv
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - ocserv
+        - freeradius
+      tags: restart_services
+
+  handlers:
+    - name: restart ocserv
+      ansible.builtin.systemd:
+        name: ocserv
+        state: restarted
+    - name: restart freeradius
+      ansible.builtin.systemd:
+        name: freeradius
+        state: restarted
