@@ -12,5 +12,11 @@ ansible-playbook -i hosts playbook-openconnect.yml
 Для проверки используйте --check
 
 
-## Создать пользователя
+## Создать пользователя (старый вариант)
 ocpasswd -c /etc/ocserv/ocpasswd username.
+
+### После настройки Радиус и БД проверить пользователей и создать
+
+mysql -u radius -p radius -e "SELECT * FROM radcheck;"
+
+INSERT INTO radcheck (username, attribute, op, value) VALUES ('testuser', 'Cleartext-Password', ':=', 'testpass');
