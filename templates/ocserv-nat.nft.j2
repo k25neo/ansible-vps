@@ -1,0 +1,7 @@
+# NAT for ocserv VPN clients ({{ ocserv_vpn_cidr }} -> {{ ocserv_wan_interface }})
+table ip nat {
+  chain postrouting {
+    type nat hook postrouting priority 100;
+    ip saddr {{ ocserv_vpn_cidr }} oifname "{{ ocserv_wan_interface }}" masquerade
+  }
+}
