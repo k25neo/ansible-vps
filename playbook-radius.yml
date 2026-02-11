@@ -155,6 +155,14 @@
         state: present
       notify: restart freeradius
 
+    - name: Set PAP auto_header in FreeRADIUS
+      ansible.builtin.lineinfile:
+        path: /etc/freeradius/3.0/mods-available/pap
+        insertafter: '^\s*pap\s*\{'
+        line: '    auto_header = yes'
+        state: present
+      notify: restart freeradius
+
     - name: Set RADIUS shared secret (matching FreeRADIUS clients.conf)
       ansible.builtin.copy:
         dest: /etc/radcli/servers
