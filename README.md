@@ -26,6 +26,8 @@ INSERT INTO radcheck (username, attribute, op, value) VALUES ('testuser', 'Clear
 
 ### Если включили pap md5
 
+INSERT INTO radcheck (username, attribute, op, value) VALUES ('testuser', 'MD5-Password', ':=', 'testpass');
+
 UPDATE radcheck 
 SET attribute = 'MD5-Password', value = MD5('testpass') 
 WHERE username = 'testuser';
