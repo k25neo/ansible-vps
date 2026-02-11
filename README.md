@@ -9,6 +9,9 @@ ansible-playbook -i hosts playbook-debian-12-to-13.yml
 ## Установка openConnect:
 ansible-playbook -i hosts playbook-openconnect.yml
 
+## Установка openConnect:
+ansible-playbook -i hosts playbook-radius.yml
+
 Для проверки используйте --check
 
 
@@ -20,3 +23,9 @@ ocpasswd -c /etc/ocserv/ocpasswd username.
 mysql -u radius -p radius -e "SELECT * FROM radcheck;"
 
 INSERT INTO radcheck (username, attribute, op, value) VALUES ('testuser', 'Cleartext-Password', ':=', 'testpass');
+
+### Если включили pap md5
+
+UPDATE radcheck 
+SET attribute = 'MD5-Password', value = MD5('testpass') 
+WHERE username = 'testuser';
