@@ -76,6 +76,7 @@
           -keyout {{ ocserv_ssl_dir }}/server-key.pem \
           -out {{ ocserv_ssl_dir }}/server-cert.pem \
           -subj "/CN={{ ocserv_cert_cn }}"
+          -addext "subjectAltName=IP:{{ ocserv_cert_cn }}"
         chmod 600 {{ ocserv_ssl_dir }}/server-key.pem
         chmod 644 {{ ocserv_ssl_dir }}/server-cert.pem
       args:
