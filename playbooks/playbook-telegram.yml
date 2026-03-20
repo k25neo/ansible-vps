@@ -1,0 +1,6 @@
+---
+
+- name: Install MTProxy
+  hosts: vps
+  roles:
+    - mtproxy

@@ -1,0 +1,107 @@
+---
+- name: Install Docker dependencies
+  apt:
+    name: [apt-transport-https, ca-certificates, curl, gnupg, lsb-release, python3-pip]
+    update_cache: yes
+
+- name: Install Docker
+  shell: curl -fsSL https://get.docker.com | sh
+  args:
+    creates: /usr/bin/docker
+
+- name: Ensure Docker service is running
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Install iptables-nft (compatibility layer)
+  apt:
+    name: [iptables, arptables, ebtables]
+    state: present
+
+- name: Force Docker to use nftables backend
+  shell: |
+    update-alternatives --set iptables /usr/sbin/iptables-nft
+    update-alternatives --set ip6tables /usr/sbin/ip6tables-nft
+  notify: restart docker
+
+- name: Flush handlers to restart docker now
+  meta: flush_handlers
+
+- name: Creates etc directory
+  ansible.builtin.file:
+    path: /etc/mtproto
+    state: directory
+
+- name: Check if secret file exists on remote server
+  ansible.builtin.stat:
+    path: /etc/mtproto/secret.yml
+  register: secret_file_result
+
+- name: Read secret from remote server (если файл есть)
+  ansible.builtin.slurp:
+    src: /etc/mtproto/secret.yml
+  register: remote_secret_b64
+  when: secret_file_result.stat.exists
+
+- name: Set secret fact from remote file
+  ansible.builtin.set_fact:
+    # Декодируем из base64 и вытаскиваем значение через regex или split
+    mtproto_user_secret: "{{ (remote_secret_b64.content | b64decode | from_yaml).mtproto_user_secret }}"
+  when: secret_file_result.stat.exists
+
+- name: Generate random hexadecimal string (если секрета еще нет)
+  ansible.builtin.set_fact:
+    mtproto_user_secret: "{{ lookup('community.general.random_string', length=32, chars='hexdigits') }}"
+  when: mtproto_user_secret is not defined
+
+- name: Write secret to remote file (только при создании)
+  ansible.builtin.copy:
+    content: "mtproto_user_secret: {{ mtproto_user_secret }}"
+    dest: /etc/mtproto/secret.yml
+  when: not secret_file_result.stat.exists
+
+- name: Run Telegram Proxy Container
+  docker_container:
+    name: tg_proxy
+    image: telegrammessenger/proxy:latest
+    state: started
+    recreate: yes
+    restart_policy: always
+    published_ports:
+      - "{{ mtproto_proxy_port }}:443"
+    env:
+      SECRET: "{{ mtproto_user_secret }}"
+      TAG: "{{ proxy_tag }}"
+
+- name: Ensure nftables.d directory exists
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy MTProto nftables snippet
+  ansible.builtin.template:
+    src: mtproto.nft.j2
+    dest: /etc/nftables.d/mtproto.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Include MTProto in nftables config
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/mtproto.nft"'
+    insertafter: EOF
+  notify: reload nftables
+
+- name: Ensure nftables is running
+  ansible.builtin.systemd:
+    name: nftables
+    state: started
+    enabled: yes
+
+- name: Show Proxy Link
+  debug:
+    msg:
+      - "Ваша ссылка: tg://proxy?server={{ ansible_host }}&port={{ mtproto_proxy_port }}&secret={{ mtproto_user_secret }}"

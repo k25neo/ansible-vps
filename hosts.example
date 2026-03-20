@@ -10,3 +10,4 @@ ansible_python_interpreter=/usr/bin/python3
 
 [vps:vars]
 radius_db_password=
+proxy_tag=
