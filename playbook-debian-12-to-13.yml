@@ -48,7 +48,7 @@
 
     - name: Verify new Debian version
       ansible.builtin.setup:
-      
+
     - name: Display current Debian version
       ansible.builtin.debug:
         msg: "Система успешно обновлена до версии {{ ansible_facts['distribution_major_version'] }} ({{ ansible_facts['distribution_release'] }})"

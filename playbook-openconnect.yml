@@ -23,7 +23,7 @@
         state: present
 
     - name: Enable IP forwarding for VPN
-      ansible.builtin.sysctl:
+      ansible.posix.sysctl:
         name: net.ipv4.ip_forward
         value: "1"
         state: present
@@ -46,7 +46,7 @@
         src: ocserv-nat.nft.j2
         dest: /etc/nftables.d/ocserv-nat.nft
         mode: "0644"
-      notify: reload nftables
+      notify: Reload nftables
 
     - name: Include ocserv NAT in nftables config
       ansible.builtin.lineinfile:
@@ -55,7 +55,7 @@
         create: false
         insertafter: EOF
       register: nft_include
-      notify: reload nftables
+      notify: Reload nftables
 
     - name: Enable and start nftables
       ansible.builtin.systemd:
@@ -84,14 +84,15 @@
       tags:
         - ocserv_cert
       when: not ocserv_use_existing_cert | default(false) | bool
-      notify: restart ocserv
+      notify: Restart ocserv
 
     - name: Backup and clean ocserv config
       ansible.builtin.copy:
         src: /etc/ocserv/ocserv.conf
         dest: /etc/ocserv/ocserv.conf.bak
         remote_src: true
-        force: no
+        mode: "0644"
+        force: false
 
     - name: Remove emty comments from ocserv config
       ansible.builtin.replace:
@@ -119,7 +120,7 @@
         - { regexp: '^ipv4-netmask =', line: 'ipv4-netmask = {{ ocserv_ipv4_netmask }}' }
         - { regexp: '^dns =', line: 'dns = {{ ocserv_dns }}' }
         - { regexp: '^default-domain =', line: 'default-domain = {{ ocserv_default_domain }}' }
-      notify: restart ocserv
+      notify: Restart ocserv
 
     - name: Remove all route lines except route = default
       ansible.builtin.lineinfile:
@@ -129,7 +130,7 @@
       register: route_removed
       until: route_removed.changed is defined and not route_removed.changed
       retries: 20
-      notify: restart ocserv
+      notify: Restart ocserv
 
     - name: Set full tunnel default route
       ansible.builtin.lineinfile:
@@ -137,14 +138,14 @@
         regexp: '^route = default'
         line: 'route = default'
         state: present
-      notify: restart ocserv
+      notify: Restart ocserv
 
     - name: Remove all dns lines except dns = {{ ocserv_dns }}
       ansible.builtin.lineinfile:
         path: /etc/ocserv/ocserv.conf
         regexp: '^dns = (?!{{ ocserv_dns }}).*'
         state: absent
-      notify: restart ocserv
+      notify: Restart ocserv
 
     - name: Set dns = {{ ocserv_dns }}
       ansible.builtin.lineinfile:
@@ -152,7 +153,7 @@
         regexp: '^dns = {{ ocserv_dns }}'
         line: 'dns = {{ ocserv_dns }}'
         state: present
-      notify: restart ocserv
+      notify: Restart ocserv
 
     - name: Ensure ocpasswd file exists
       ansible.builtin.file:
@@ -168,12 +169,12 @@
         daemon_reload: true
 
   handlers:
-    - name: restart ocserv
+    - name: Restart ocserv
       ansible.builtin.systemd:
         name: ocserv
         state: restarted
 
-    - name: reload nftables
+    - name: Reload nftables
       ansible.builtin.systemd:
         name: nftables
         state: restarted
